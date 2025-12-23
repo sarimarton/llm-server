@@ -79,17 +79,8 @@ function processClaude(text, systemPrompt) {
 function createChatHandler(backend) {
   return async (req, res) => {
     const { messages = [], model } = req.body;
-
-    // DEBUG
-    console.log('\n=== REQUEST ===');
-    console.log('Full body:', JSON.stringify(req.body, null, 2));
-
     const input = extractText(messages);
     const systemPrompt = extractSystemPrompt(messages);
-
-    console.log('Extracted input:', JSON.stringify(input));
-    console.log('System prompt:', systemPrompt ? 'yes (' + systemPrompt.length + ' chars)' : 'none');
-    console.log('Stream requested:', req.body.stream);
 
     try {
       let result;
@@ -98,9 +89,6 @@ function createChatHandler(backend) {
       } else {
         result = await processLibreTranslate(input);
       }
-
-      console.log('Result:', JSON.stringify(result));
-      console.log('=== END ===\n');
 
       const id = `chatcmpl-${backend}-${Date.now()}`;
       const created = Math.floor(Date.now() / 1000);
