@@ -82,6 +82,14 @@ function createChatHandler(backend) {
     const input = extractText(messages);
     const systemPrompt = extractSystemPrompt(messages);
 
+    // Extract just the dictated text from backticks if present
+    const dictatedMatch = input.match(/```\n?([\s\S]*?)\n?```/);
+    const dictatedText = dictatedMatch ? dictatedMatch[1].trim() : input;
+
+    console.log('\n┌─ INPUT ──────────────────────────────────────');
+    console.log('│ ' + dictatedText.replace(/\n/g, '\n│ '));
+    console.log('└──────────────────────────────────────────────');
+
     try {
       let result;
       if (backend === 'claude') {
@@ -89,6 +97,10 @@ function createChatHandler(backend) {
       } else {
         result = await processLibreTranslate(input);
       }
+
+      console.log('┌─ OUTPUT ─────────────────────────────────────');
+      console.log('│ ' + result.replace(/\n/g, '\n│ '));
+      console.log('└──────────────────────────────────────────────\n');
 
       const id = `chatcmpl-${backend}-${Date.now()}`;
       const created = Math.floor(Date.now() / 1000);
