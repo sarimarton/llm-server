@@ -1,4 +1,4 @@
-.PHONY: all start start-claude stop clean libretranslate help
+.PHONY: all start start-claude stop clean libretranslate check-docker help
 
 DOCKER_NAME = libretranslate-server
 PROXY_PORT = 8080
@@ -24,8 +24,39 @@ all: start
 node_modules: package.json
 	npm install
 
+# Check Docker availability and start if needed
+check-docker:
+	@if ! command -v docker >/dev/null 2>&1; then \
+		echo ""; \
+		echo "ERROR: Docker is not installed."; \
+		echo ""; \
+		echo "Please install Docker Desktop from: https://www.docker.com/products/docker-desktop/"; \
+		echo "Or use 'make start-claude' to run without Docker (Claude CLI only)."; \
+		echo ""; \
+		exit 1; \
+	fi
+	@if ! docker info >/dev/null 2>&1; then \
+		echo "Docker is not running. Attempting to start Docker Desktop..."; \
+		open -a Docker 2>/dev/null || (echo "Could not start Docker Desktop automatically." && exit 1); \
+		echo "Waiting for Docker to start (this may take up to 60 seconds)..."; \
+		for i in 1 2 3 4 5 6 7 8 9 10 11 12; do \
+			if docker info >/dev/null 2>&1; then \
+				echo "Docker is now running."; \
+				break; \
+			fi; \
+			if [ $$i -eq 12 ]; then \
+				echo ""; \
+				echo "ERROR: Docker failed to start within 60 seconds."; \
+				echo "Please start Docker Desktop manually and try again."; \
+				echo ""; \
+				exit 1; \
+			fi; \
+			sleep 5; \
+		done; \
+	fi
+
 # Start LibreTranslate in Docker (background)
-libretranslate:
+libretranslate: check-docker
 	@echo "Starting LibreTranslate Docker container..."
 	@docker rm -f $(DOCKER_NAME) 2>/dev/null || true
 	@docker run -d --name $(DOCKER_NAME) -p $(LIBRETRANSLATE_PORT):5000 \

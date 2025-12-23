@@ -8,7 +8,9 @@ const PORT = 8080;
 app.use(express.json());
 
 function extractText(messages) {
+  // Only extract user messages (skip system prompts)
   return messages
+    .filter(msg => msg.role === 'user')
     .map(msg => {
       if (typeof msg.content === 'string') return msg.content;
       if (Array.isArray(msg.content)) {
@@ -20,6 +22,19 @@ function extractText(messages) {
       return '';
     })
     .join('\n');
+}
+
+function extractSystemPrompt(messages) {
+  const systemMsg = messages.find(msg => msg.role === 'system');
+  if (!systemMsg) return null;
+  if (typeof systemMsg.content === 'string') return systemMsg.content;
+  if (Array.isArray(systemMsg.content)) {
+    return systemMsg.content
+      .filter(p => p.type === 'text')
+      .map(p => p.text)
+      .join('\n');
+  }
+  return null;
 }
 
 // LibreTranslate backend
@@ -40,20 +55,14 @@ async function processLibreTranslate(text) {
 }
 
 // Claude CLI backend
-function processClaude(text) {
-  const prompt = `Te egy magyar nyelvű diktálás-javító asszisztens vagy. A felhasználó hangfelismerésből kapott magyar szöveget küld neked, amely tartalmazhat félrehallásokat, helyesírási hibákat, vagy rosszul felismert szavakat.
-
-A feladatod:
-1. Javítsd ki a nyilvánvaló félrehallásokat és helyesírási hibákat
-2. Tedd értelmessé a szöveget, ha szükséges
-3. Tartsd meg az eredeti jelentést és stílust
-4. CSAK a javított szöveget add vissza, semmi mást (ne adj magyarázatot, ne írj bevezető szöveget)
-
-Javítandó szöveg:
-${text}`;
-
+function processClaude(text, systemPrompt) {
   try {
-    const result = execSync(`claude -p '${prompt.replace(/'/g, "'\\''")}'`, {
+    const escape = s => s.replace(/'/g, "'\\''");
+    let cmd = `claude -p '${escape(text)}'`;
+    if (systemPrompt) {
+      cmd += ` --system-prompt '${escape(systemPrompt)}'`;
+    }
+    const result = execSync(cmd, {
       encoding: 'utf-8',
       shell: '/bin/bash',
       timeout: 60000,
@@ -71,11 +80,12 @@ function createChatHandler(backend) {
   return async (req, res) => {
     const { messages = [], model } = req.body;
     const input = extractText(messages);
+    const systemPrompt = extractSystemPrompt(messages);
 
     try {
       let result;
       if (backend === 'claude') {
-        result = processClaude(input);
+        result = processClaude(input, systemPrompt);
       } else {
         result = await processLibreTranslate(input);
       }
