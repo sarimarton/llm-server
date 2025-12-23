@@ -79,8 +79,17 @@ function processClaude(text, systemPrompt) {
 function createChatHandler(backend) {
   return async (req, res) => {
     const { messages = [], model } = req.body;
+
+    // DEBUG
+    console.log('\n=== REQUEST ===');
+    console.log('Full body:', JSON.stringify(req.body, null, 2));
+
     const input = extractText(messages);
     const systemPrompt = extractSystemPrompt(messages);
+
+    console.log('Extracted input:', JSON.stringify(input));
+    console.log('System prompt:', systemPrompt ? 'yes (' + systemPrompt.length + ' chars)' : 'none');
+    console.log('Stream requested:', req.body.stream);
 
     try {
       let result;
@@ -90,21 +99,68 @@ function createChatHandler(backend) {
         result = await processLibreTranslate(input);
       }
 
-      res.json({
-        id: `chatcmpl-${backend}`,
-        object: 'chat.completion',
-        model: model || backend,
-        choices: [{
-          index: 0,
-          message: { role: 'assistant', content: result },
-          finish_reason: 'stop'
-        }],
-        usage: {
-          prompt_tokens: input.length,
-          completion_tokens: result.length,
-          total_tokens: input.length + result.length
-        }
-      });
+      console.log('Result:', JSON.stringify(result));
+      console.log('=== END ===\n');
+
+      const id = `chatcmpl-${backend}-${Date.now()}`;
+      const created = Math.floor(Date.now() / 1000);
+
+      // Handle streaming response
+      if (req.body.stream) {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        // Send content chunk
+        const chunk = {
+          id,
+          object: 'chat.completion.chunk',
+          created,
+          model: model || backend,
+          choices: [{
+            index: 0,
+            delta: { role: 'assistant', content: result },
+            finish_reason: null
+          }]
+        };
+        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+
+        // Send finish chunk
+        const finishChunk = {
+          id,
+          object: 'chat.completion.chunk',
+          created,
+          model: model || backend,
+          choices: [{
+            index: 0,
+            delta: {},
+            finish_reason: 'stop'
+          }]
+        };
+        res.write(`data: ${JSON.stringify(finishChunk)}\n\n`);
+
+        // Send done signal
+        res.write('data: [DONE]\n\n');
+        res.end();
+      } else {
+        // Non-streaming response
+        res.json({
+          id,
+          object: 'chat.completion',
+          created,
+          model: model || backend,
+          choices: [{
+            index: 0,
+            message: { role: 'assistant', content: result },
+            finish_reason: 'stop'
+          }],
+          usage: {
+            prompt_tokens: input.length,
+            completion_tokens: result.length,
+            total_tokens: input.length + result.length
+          }
+        });
+      }
     } catch (error) {
       res.status(500).json({
         error: {
