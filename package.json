@@ -1,5 +1,5 @@
 {
-  "name": "llm-translator",
+  "name": "llm-server",
   "version": "1.0.0",
   "description": "OpenAI-compatible API proxy for LibreTranslate",
   "main": "server.js",

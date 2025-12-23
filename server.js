@@ -1,4 +1,5 @@
 const express = require('express');
+const { execSync } = require('child_process');
 const app = express();
 
 const LIBRETRANSLATE_URL = 'http://localhost:5001/translate';
@@ -21,7 +22,8 @@ function extractText(messages) {
     .join('\n');
 }
 
-async function translate(text, source, target) {
+// LibreTranslate backend
+async function translateLibre(text, source, target) {
   const res = await fetch(LIBRETRANSLATE_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -31,51 +33,115 @@ async function translate(text, source, target) {
   return data.translatedText || text;
 }
 
-async function processDictation(text) {
-  const en = await translate(text, 'hu', 'en');
-  const hu = await translate(en, 'en', 'hu');
+async function processLibreTranslate(text) {
+  const en = await translateLibre(text, 'hu', 'en');
+  const hu = await translateLibre(en, 'en', 'hu');
   return hu;
 }
 
-app.post('/v1/chat/completions', async (req, res) => {
-  const { messages = [], model = 'libretranslate' } = req.body;
-  const input = extractText(messages);
-  const result = await processDictation(input);
+// Claude CLI backend
+function processClaude(text) {
+  const prompt = `Te egy magyar nyelvű diktálás-javító asszisztens vagy. A felhasználó hangfelismerésből kapott magyar szöveget küld neked, amely tartalmazhat félrehallásokat, helyesírási hibákat, vagy rosszul felismert szavakat.
 
-  res.json({
-    id: 'chatcmpl-libretranslate',
-    object: 'chat.completion',
-    model,
-    choices: [{
-      index: 0,
-      message: { role: 'assistant', content: result },
-      finish_reason: 'stop'
-    }],
-    usage: {
-      prompt_tokens: input.length,
-      completion_tokens: result.length,
-      total_tokens: input.length + result.length
+A feladatod:
+1. Javítsd ki a nyilvánvaló félrehallásokat és helyesírási hibákat
+2. Tedd értelmessé a szöveget, ha szükséges
+3. Tartsd meg az eredeti jelentést és stílust
+4. CSAK a javított szöveget add vissza, semmi mást (ne adj magyarázatot, ne írj bevezető szöveget)
+
+Javítandó szöveg:
+${text}`;
+
+  try {
+    const result = execSync(`claude -p '${prompt.replace(/'/g, "'\\''")}'`, {
+      encoding: 'utf-8',
+      shell: '/bin/bash',
+      timeout: 60000,
+      maxBuffer: 10 * 1024 * 1024
+    });
+    return result.trim();
+  } catch (error) {
+    console.error('Claude CLI error:', error.message);
+    throw new Error('Claude CLI failed: ' + error.message);
+  }
+}
+
+// Chat completions endpoint factory
+function createChatHandler(backend) {
+  return async (req, res) => {
+    const { messages = [], model } = req.body;
+    const input = extractText(messages);
+
+    try {
+      let result;
+      if (backend === 'claude') {
+        result = processClaude(input);
+      } else {
+        result = await processLibreTranslate(input);
+      }
+
+      res.json({
+        id: `chatcmpl-${backend}`,
+        object: 'chat.completion',
+        model: model || backend,
+        choices: [{
+          index: 0,
+          message: { role: 'assistant', content: result },
+          finish_reason: 'stop'
+        }],
+        usage: {
+          prompt_tokens: input.length,
+          completion_tokens: result.length,
+          total_tokens: input.length + result.length
+        }
+      });
+    } catch (error) {
+      res.status(500).json({
+        error: {
+          message: error.message,
+          type: 'server_error'
+        }
+      });
     }
-  });
-});
+  };
+}
 
-app.get('/v1/models', (req, res) => {
+// LibreTranslate routes
+app.post('/libretranslate/v1/chat/completions', createChatHandler('libretranslate'));
+app.get('/libretranslate/v1/models', (req, res) => {
   res.json({
     object: 'list',
     data: [{ id: 'libretranslate', object: 'model', owned_by: 'local' }]
   });
 });
 
+// Claude routes
+app.post('/claude/v1/chat/completions', createChatHandler('claude'));
+app.get('/claude/v1/models', (req, res) => {
+  res.json({
+    object: 'list',
+    data: [{ id: 'claude', object: 'model', owned_by: 'anthropic' }]
+  });
+});
+
+// Health check
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.listen(PORT, () => {
-  console.log('\n' + '='.repeat(50));
-  console.log('MacWhisper Configuration:');
-  console.log('='.repeat(50));
-  console.log('  Name:       LibreTranslate');
-  console.log(`  Base URL:   http://localhost:${PORT}/v1`);
-  console.log('  API Key:    dummy');
-  console.log('  Model Name: libretranslate');
-  console.log('='.repeat(50));
-  console.log(`\nServer running on http://localhost:${PORT}\n`);
+  console.log('\n' + '='.repeat(60));
+  console.log('MacWhisper Configuration Options:');
+  console.log('='.repeat(60));
+  console.log('\n[1] LibreTranslate (requires Docker):');
+  console.log('    Name:       LibreTranslate');
+  console.log(`    Base URL:   http://localhost:${PORT}/libretranslate/v1`);
+  console.log('    API Key:    dummy');
+  console.log('    Model Name: libretranslate');
+  console.log('\n[2] Claude CLI (requires claude command):');
+  console.log('    Name:       Claude');
+  console.log(`    Base URL:   http://localhost:${PORT}/claude/v1`);
+  console.log('    API Key:    dummy');
+  console.log('    Model Name: claude');
+  console.log('\n' + '='.repeat(60));
+  console.log(`Server running on http://localhost:${PORT}`);
+  console.log('='.repeat(60) + '\n');
 });

@@ -1,4 +1,4 @@
-# LLM Translator
+# LLM Server
 
 OpenAI-compatible API proxy for LibreTranslate, designed for MacWhisper integration.
 

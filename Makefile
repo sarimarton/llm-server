@@ -1,16 +1,21 @@
-.PHONY: all start stop clean libretranslate help
+.PHONY: all start start-claude stop clean libretranslate help
 
 DOCKER_NAME = libretranslate-server
 PROXY_PORT = 8080
 LIBRETRANSLATE_PORT = 5001
 
 help:
-	@echo "LibreTranslate OpenAI Proxy"
+	@echo "LLM Translator - OpenAI-compatible API proxy"
 	@echo ""
 	@echo "Commands:"
-	@echo "  make start    - Start LibreTranslate and proxy server"
-	@echo "  make stop     - Stop all services"
-	@echo "  make clean    - Remove Docker container and node_modules"
+	@echo "  make start        - Start with LibreTranslate backend (requires Docker)"
+	@echo "  make start-claude - Start with Claude CLI backend only (no Docker)"
+	@echo "  make stop         - Stop all services"
+	@echo "  make clean        - Remove Docker container and node_modules"
+	@echo ""
+	@echo "Backends:"
+	@echo "  /libretranslate/v1  - Uses LibreTranslate Docker container"
+	@echo "  /claude/v1          - Uses Claude CLI (claude -p)"
 	@echo ""
 
 all: start
@@ -29,19 +34,15 @@ libretranslate:
 	@sleep 5
 	@echo "LibreTranslate running on port $(LIBRETRANSLATE_PORT)"
 
-# Start everything
+# Start with LibreTranslate (full setup)
 start: node_modules libretranslate
+	@node server.js
+
+# Start without Docker (Claude CLI only)
+start-claude: node_modules
 	@echo ""
-	@echo "=============================================="
-	@echo "MacWhisper Configuration:"
-	@echo "=============================================="
-	@echo "  Name:       LibreTranslate"
-	@echo "  Base URL:   http://localhost:$(PROXY_PORT)/v1"
-	@echo "  API Key:    dummy"
-	@echo "  Model Name: libretranslate"
-	@echo "=============================================="
-	@echo ""
-	@echo "Starting proxy server (Ctrl+C to stop)..."
+	@echo "Starting server (Claude CLI backend only)..."
+	@echo "Note: LibreTranslate endpoints will not work without Docker"
 	@echo ""
 	@node server.js
 
