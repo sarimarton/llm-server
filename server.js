@@ -1,9 +1,41 @@
 const express = require('express');
 const { execSync } = require('child_process');
+const os = require('os');
 const app = express();
+
+// Get local network IP
+function getLocalIP() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  return 'unknown';
+}
+
+// Get Tailscale IP and hostname
+function getTailscaleInfo() {
+  try {
+    // On macOS, use the Tailscale app's CLI path
+    const tailscalePath = process.platform === 'darwin'
+      ? '/Applications/Tailscale.app/Contents/MacOS/Tailscale'
+      : 'tailscale';
+    const ip = execSync(`"${tailscalePath}" ip -4 2>/dev/null`, { encoding: 'utf-8' }).trim();
+    const status = execSync(`"${tailscalePath}" status --json 2>/dev/null`, { encoding: 'utf-8' });
+    const parsed = JSON.parse(status);
+    const hostname = parsed.Self?.DNSName?.replace(/\.$/, '') || null;
+    return { ip, hostname };
+  } catch {
+    return null;
+  }
+}
 
 const LIBRETRANSLATE_URL = 'http://localhost:5001/translate';
 const PORT = 8080;
+const DEFAULT_CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'haiku';
 
 app.use(express.json());
 
@@ -55,10 +87,10 @@ async function processLibreTranslate(text) {
 }
 
 // Claude CLI backend
-function processClaude(text, systemPrompt) {
+function processClaude(text, systemPrompt, claudeModel = DEFAULT_CLAUDE_MODEL) {
   try {
     const escape = s => s.replace(/'/g, "'\\''");
-    let cmd = `claude -p '${escape(text)}'`;
+    let cmd = `claude -p '${escape(text)}' --model ${claudeModel}`;
     if (systemPrompt) {
       cmd += ` --system-prompt '${escape(systemPrompt)}'`;
     }
@@ -68,7 +100,7 @@ function processClaude(text, systemPrompt) {
       timeout: 60000,
       maxBuffer: 10 * 1024 * 1024
     });
-    return result.trim();
+    return { text: result.trim(), model: claudeModel };
   } catch (error) {
     console.error('Claude CLI error:', error.message);
     throw new Error('Claude CLI failed: ' + error.message);
@@ -92,13 +124,18 @@ function createChatHandler(backend) {
 
     try {
       let result;
+      let usedModel = backend;
       if (backend === 'claude') {
-        result = processClaude(input, systemPrompt);
+        // Use model from request, or fall back to default
+        const claudeModel = model || DEFAULT_CLAUDE_MODEL;
+        const claudeResult = processClaude(input, systemPrompt, claudeModel);
+        result = claudeResult.text;
+        usedModel = `claude/${claudeResult.model}`;
       } else {
         result = await processLibreTranslate(input);
       }
 
-      console.log('┌─ OUTPUT ─────────────────────────────────────');
+      console.log(`┌─ OUTPUT (${usedModel}) ─────────────────────────────────────`);
       console.log('│ ' + result.replace(/\n/g, '\n│ '));
       console.log('└──────────────────────────────────────────────\n');
 
@@ -194,20 +231,46 @@ app.get('/claude/v1/models', (req, res) => {
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 app.listen(PORT, () => {
-  console.log('\n' + '='.repeat(60));
-  console.log('MacWhisper Configuration Options:');
-  console.log('='.repeat(60));
-  console.log('\n[1] LibreTranslate (requires Docker):');
-  console.log('    Name:       LibreTranslate');
-  console.log(`    Base URL:   http://localhost:${PORT}/libretranslate/v1`);
-  console.log('    API Key:    dummy');
-  console.log('    Model Name: libretranslate');
-  console.log('\n[2] Claude CLI (requires claude command):');
-  console.log('    Name:       Claude');
-  console.log(`    Base URL:   http://localhost:${PORT}/claude/v1`);
-  console.log('    API Key:    dummy');
-  console.log('    Model Name: claude');
-  console.log('\n' + '='.repeat(60));
-  console.log(`Server running on http://localhost:${PORT}`);
-  console.log('='.repeat(60) + '\n');
+  const localIP = getLocalIP();
+  const tailscale = getTailscaleInfo();
+
+  const urls = {
+    local: `http://localhost:${PORT}`,
+    network: `http://${localIP}:${PORT}`,
+    tailscale: tailscale ? `http://${tailscale.ip}:${PORT}` : null,
+    https: tailscale?.hostname ? `https://${tailscale.hostname}` : null
+  };
+
+  console.log('\n' + '='.repeat(65));
+  console.log('MacWhisper / iOS Configuration');
+  console.log('='.repeat(65));
+
+  console.log('\n[Claude] API Key: dummy | Model: ' + DEFAULT_CLAUDE_MODEL + ' (or: haiku, sonnet, opus)');
+  console.log('-'.repeat(65));
+  console.log(`  Local:      ${urls.local}/claude/v1`);
+  console.log(`  Network:    ${urls.network}/claude/v1`);
+  if (urls.tailscale) {
+    console.log(`  Tailscale:  ${urls.tailscale}/claude/v1`);
+  }
+  if (urls.https) {
+    console.log(`  HTTPS/iOS:  ${urls.https}/claude/v1`);
+  }
+
+  console.log('\n[LibreTranslate] API Key: dummy | Model: libretranslate');
+  console.log('-'.repeat(65));
+  console.log(`  Local:      ${urls.local}/libretranslate/v1`);
+  console.log(`  Network:    ${urls.network}/libretranslate/v1`);
+  if (urls.tailscale) {
+    console.log(`  Tailscale:  ${urls.tailscale}/libretranslate/v1`);
+  }
+  if (urls.https) {
+    console.log(`  HTTPS/iOS:  ${urls.https}/libretranslate/v1`);
+  }
+
+  if (tailscale?.hostname) {
+    console.log('\n' + '-'.repeat(65));
+    console.log(`To enable HTTPS: tailscale serve --bg ${PORT}`);
+  }
+
+  console.log('\n' + '='.repeat(65) + '\n');
 });
