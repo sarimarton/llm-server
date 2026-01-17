@@ -34,7 +34,7 @@ function getTailscaleInfo() {
 }
 
 const LIBRETRANSLATE_URL = 'http://localhost:5001/translate';
-const PORT = 8080;
+const PORT = 51732;
 const DEFAULT_CLAUDE_MODEL = process.env.CLAUDE_MODEL || 'haiku';
 
 app.use(express.json());
@@ -86,6 +86,9 @@ async function processLibreTranslate(text) {
   return hu;
 }
 
+// Valid Claude models
+const VALID_CLAUDE_MODELS = ['haiku', 'sonnet', 'opus'];
+
 // Claude CLI backend
 function processClaude(text, systemPrompt, claudeModel = DEFAULT_CLAUDE_MODEL) {
   try {
@@ -126,8 +129,8 @@ function createChatHandler(backend) {
       let result;
       let usedModel = backend;
       if (backend === 'claude') {
-        // Use model from request, or fall back to default
-        const claudeModel = model || DEFAULT_CLAUDE_MODEL;
+        // Use model from request if valid, or fall back to default
+        const claudeModel = (model && VALID_CLAUDE_MODELS.includes(model)) ? model : DEFAULT_CLAUDE_MODEL;
         const claudeResult = processClaude(input, systemPrompt, claudeModel);
         result = claudeResult.text;
         usedModel = `claude/${claudeResult.model}`;
@@ -223,7 +226,7 @@ app.post('/claude/v1/chat/completions', createChatHandler('claude'));
 app.get('/claude/v1/models', (req, res) => {
   res.json({
     object: 'list',
-    data: [{ id: 'claude', object: 'model', owned_by: 'anthropic' }]
+    data: VALID_CLAUDE_MODELS.map(id => ({ id, object: 'model', owned_by: 'anthropic' }))
   });
 });
 
