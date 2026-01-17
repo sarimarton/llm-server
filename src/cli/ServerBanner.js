@@ -1,0 +1,101 @@
+// Server Banner - Ink Component
+
+import React from 'react';
+import { render, Box, Text } from 'ink';
+import htm from 'htm';
+import { PORT, DEFAULT_CLAUDE_MODEL, VALID_CLAUDE_MODELS } from '../config.js';
+import { getLocalIP } from '../network.js';
+import { getTailscaleInfo } from '../tailscale.js';
+
+// Bind htm to React.createElement
+const html = htm.bind(React.createElement);
+
+/**
+ * URL Row Component
+ */
+function UrlRow({ label, url }) {
+  return html`
+    <${Box}>
+      <${Text} dimColor>  ${label.padEnd(12)}<//>
+      <${Text} color="cyan">${url}<//>
+    <//>
+  `;
+}
+
+/**
+ * Endpoint Section Component
+ */
+function EndpointSection({ title, apiKey, model, models, urls, basePath }) {
+  return html`
+    <${Box} flexDirection="column" marginTop=${1}>
+      <${Text}>
+        <${Text} color="white" bold>[${title}]<//>
+        <${Text} dimColor> API Key: <//>
+        <${Text}>${apiKey}<//>
+        <${Text} dimColor> | Model: <//>
+        <${Text} color="green">${model}<//>
+        ${models && html`<${Text} dimColor> (or: ${models.join(', ')})<//>`}
+      <//>
+      <${Text} dimColor>${'─'.repeat(65)}<//>
+      ${urls.local && html`<${UrlRow} label="Local:" url=${`${urls.local}${basePath}`} />`}
+      ${urls.network && html`<${UrlRow} label="Network:" url=${`${urls.network}${basePath}`} />`}
+      ${urls.tailscale && html`<${UrlRow} label="Tailscale:" url=${`${urls.tailscale}${basePath}`} />`}
+      ${urls.https && html`<${UrlRow} label="HTTPS/iOS:" url=${`${urls.https}${basePath}`} />`}
+    <//>
+  `;
+}
+
+/**
+ * Server Banner Component
+ */
+function ServerBanner({ port = PORT }) {
+  const localIP = getLocalIP();
+  const tailscale = getTailscaleInfo();
+
+  const urls = {
+    local: `http://localhost:${port}`,
+    network: `http://${localIP}:${port}`,
+    tailscale: tailscale ? `http://${tailscale.ip}:${port}` : null,
+    https: tailscale?.hostname ? `https://${tailscale.hostname}` : null
+  };
+
+  return html`
+    <${Box} flexDirection="column" paddingY=${1}>
+      <${Text} color="white" bold>${'═'.repeat(65)}<//>
+      <${Text} color="white" bold>MacWhisper / iOS Configuration<//>
+      <${Text} color="white" bold>${'═'.repeat(65)}<//>
+
+      <${EndpointSection}
+        title="Claude"
+        apiKey="dummy"
+        model=${DEFAULT_CLAUDE_MODEL}
+        models=${VALID_CLAUDE_MODELS}
+        urls=${urls}
+        basePath="/claude/v1"
+      />
+
+      <${EndpointSection}
+        title="LibreTranslate"
+        apiKey="dummy"
+        model="libretranslate"
+        urls=${urls}
+        basePath="/libretranslate/v1"
+      />
+
+      <${Box} marginTop=${1}>
+        <${Text} color="white" bold>${'═'.repeat(65)}<//>
+      <//>
+    <//>
+  `;
+}
+
+/**
+ * Render the server banner to console
+ */
+export function showServerBanner(port = PORT) {
+  const { unmount } = render(html`<${ServerBanner} port=${port} />`);
+  // Unmount after render to avoid keeping React running
+  setTimeout(() => unmount(), 50);
+}
+
+export default ServerBanner;
