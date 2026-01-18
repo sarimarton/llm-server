@@ -44,12 +44,12 @@ async function autoConfigureTailscale() {
   }
 
   // Auto-configure
-  console.log(chalk.dim(`Configuring Tailscale serve for ${BASE_PATH}...`));
+  console.log(chalk.dim(`Configuring Tailscale serve for port ${port}...`));
 
   try {
     await setupTailscaleServe(port);
     const info = getTailscaleInfo();
-    console.log(chalk.green(`✓ HTTPS: https://${info?.hostname}${BASE_PATH}`));
+    console.log(chalk.green(`✓ HTTPS: https://${info?.hostname}:${port}${BASE_PATH}`));
   } catch (err) {
     console.log(chalk.yellow(`⚠ Tailscale serve setup failed: ${err.message}`));
   }

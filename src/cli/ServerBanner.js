@@ -52,13 +52,12 @@ function ServerBanner({ port = PORT }) {
   const localIP = getLocalIP();
   const tailscale = getTailscaleInfo();
 
-  // For direct access (IP:port), include BASE_PATH
-  // For HTTPS (tailscale serve), path is routed, no port needed
+  // All URLs include port (port-based routing for WebSocket compatibility)
   const urls = {
     local: `http://localhost:${port}${BASE_PATH}`,
     network: `http://${localIP}:${port}${BASE_PATH}`,
     tailscale: tailscale ? `http://${tailscale.ip}:${port}${BASE_PATH}` : null,
-    https: tailscale?.hostname ? `https://${tailscale.hostname}${BASE_PATH}` : null
+    https: tailscale?.hostname ? `https://${tailscale.hostname}:${port}${BASE_PATH}` : null
   };
 
   return html`
