@@ -5,8 +5,9 @@
 import express from 'express';
 import { program } from 'commander';
 import chalk from 'chalk';
-import { PORT } from './config.js';
-import { runTailscaleSetup, checkTailscaleStatus, showServerBanner } from './cli/index.js';
+import { PORT, BASE_PATH, TAILSCALE_AUTO_SERVE } from './config.js';
+import { checkTailscaleStatus, showServerBanner } from './cli/index.js';
+import { isTailscaleAvailable, setupTailscaleServe, getTailscaleInfo } from './tailscale.js';
 import claudeRoutes from './routes/claude.js';
 import libretranslateRoutes from './routes/libretranslate.js';
 
@@ -16,65 +17,62 @@ program
   .description('OpenAI-compatible API proxy for Claude CLI and LibreTranslate')
   .version('1.0.0')
   .option('-p, --port <port>', 'Port to listen on', String(PORT))
-  .option('--setup-tailscale', 'Run Tailscale serve setup wizard')
-  .option('--no-tailscale-check', 'Skip Tailscale serve check on startup')
+  .option('--no-tailscale', 'Disable Tailscale auto-configuration')
   .parse();
 
 const options = program.opts();
 const port = parseInt(options.port, 10);
 
 /**
+ * Auto-configure Tailscale serve (silent, no prompts)
+ */
+async function autoConfigureTailscale() {
+  if (!TAILSCALE_AUTO_SERVE || options.tailscale === false) {
+    return;
+  }
+
+  if (!isTailscaleAvailable()) {
+    console.log(chalk.dim('Tailscale not available, skipping HTTPS setup'));
+    return;
+  }
+
+  const status = checkTailscaleStatus(port);
+
+  if (status.ok) {
+    // Already configured correctly
+    return;
+  }
+
+  // Auto-configure
+  console.log(chalk.dim(`Configuring Tailscale serve for ${BASE_PATH}...`));
+
+  try {
+    await setupTailscaleServe(port);
+    const info = getTailscaleInfo();
+    console.log(chalk.green(`✓ HTTPS: https://${info?.hostname}${BASE_PATH}`));
+  } catch (err) {
+    console.log(chalk.yellow(`⚠ Tailscale serve setup failed: ${err.message}`));
+  }
+}
+
+/**
  * Main startup function
  */
 async function main() {
-  // If --setup-tailscale flag is provided, run setup wizard and exit
-  if (options.setupTailscale) {
-    console.log(chalk.bold('\nTailscale Serve Setup\n'));
-    const result = await runTailscaleSetup(port);
-    process.exit(result.success ? 0 : 1);
-  }
-
-  // Check Tailscale status (unless --no-tailscale-check)
-  if (options.tailscaleCheck !== false) {
-    const status = checkTailscaleStatus(port);
-
-    if (!status.ok) {
-      const isTTY = process.stdin.isTTY && process.stdout.isTTY;
-
-      if (isTTY) {
-        // Interactive mode - let Ink handle everything
-        const result = await runTailscaleSetup(port);
-
-        // Small delay to let Ink finish rendering
-        await new Promise(r => setTimeout(r, 200));
-
-        // Only show follow-up hint if skipped
-        if (result.reason === 'skipped') {
-          console.log(chalk.dim(`Run with --setup-tailscale to configure later.\n`));
-        }
-      } else {
-        // Non-interactive mode - show simple message
-        if (status.reason === 'not-installed') {
-          console.log(chalk.yellow('\n⚠ Tailscale is not installed'));
-          console.log(chalk.dim('  Install from: https://tailscale.com/download\n'));
-        } else {
-          console.log(chalk.yellow('\n⚠ Tailscale serve needs configuration'));
-          console.log(chalk.dim(`  Run: node src/index.js --setup-tailscale\n`));
-        }
-      }
-    }
-  }
+  // Auto-configure Tailscale (silent)
+  await autoConfigureTailscale();
 
   // Create Express app
   const app = express();
   app.use(express.json());
 
-  // Mount routes
-  app.use('/claude', claudeRoutes);
-  app.use('/libretranslate', libretranslateRoutes);
+  // Mount routes under BASE_PATH
+  app.use(`${BASE_PATH}/claude`, claudeRoutes);
+  app.use(`${BASE_PATH}/libretranslate`, libretranslateRoutes);
 
-  // Health check
+  // Health check (both at root and under BASE_PATH)
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
+  app.get(`${BASE_PATH}/health`, (req, res) => res.json({ status: 'ok' }));
 
   // Start server
   app.listen(port, () => {
