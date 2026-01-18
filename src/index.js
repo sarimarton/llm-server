@@ -5,7 +5,7 @@
 import express from 'express';
 import { program } from 'commander';
 import chalk from 'chalk';
-import { PORT, BASE_PATH, TAILSCALE_AUTO_SERVE } from './config.js';
+import { PORT, TAILSCALE_AUTO_SERVE } from './config.js';
 import { checkTailscaleStatus, showServerBanner } from './cli/index.js';
 import { isTailscaleAvailable, setupTailscaleServe, getTailscaleInfo } from './tailscale.js';
 import claudeRoutes from './routes/claude.js';
@@ -49,7 +49,7 @@ async function autoConfigureTailscale() {
   try {
     await setupTailscaleServe(port);
     const info = getTailscaleInfo();
-    console.log(chalk.green(`✓ HTTPS: https://${info?.hostname}:${port}${BASE_PATH}`));
+    console.log(chalk.green(`✓ HTTPS: https://${info?.hostname}:${port}`));
   } catch (err) {
     console.log(chalk.yellow(`⚠ Tailscale serve setup failed: ${err.message}`));
   }
@@ -66,13 +66,12 @@ async function main() {
   const app = express();
   app.use(express.json());
 
-  // Mount routes under BASE_PATH
-  app.use(`${BASE_PATH}/claude`, claudeRoutes);
-  app.use(`${BASE_PATH}/libretranslate`, libretranslateRoutes);
+  // Mount routes
+  app.use('/claude', claudeRoutes);
+  app.use('/libretranslate', libretranslateRoutes);
 
-  // Health check (both at root and under BASE_PATH)
+  // Health check
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
-  app.get(`${BASE_PATH}/health`, (req, res) => res.json({ status: 'ok' }));
 
   // Start server
   app.listen(port, () => {

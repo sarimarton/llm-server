@@ -3,7 +3,7 @@
 import React from 'react';
 import { render, Box, Text } from 'ink';
 import htm from 'htm';
-import { PORT, BASE_PATH, DEFAULT_CLAUDE_MODEL, VALID_CLAUDE_MODELS } from '../config.js';
+import { PORT, DEFAULT_CLAUDE_MODEL, VALID_CLAUDE_MODELS } from '../config.js';
 import { getLocalIP } from '../network.js';
 import { getTailscaleInfo } from '../tailscale.js';
 
@@ -52,12 +52,11 @@ function ServerBanner({ port = PORT }) {
   const localIP = getLocalIP();
   const tailscale = getTailscaleInfo();
 
-  // All URLs include port (port-based routing for WebSocket compatibility)
   const urls = {
-    local: `http://localhost:${port}${BASE_PATH}`,
-    network: `http://${localIP}:${port}${BASE_PATH}`,
-    tailscale: tailscale ? `http://${tailscale.ip}:${port}${BASE_PATH}` : null,
-    https: tailscale?.hostname ? `https://${tailscale.hostname}:${port}${BASE_PATH}` : null
+    local: `http://localhost:${port}`,
+    network: `http://${localIP}:${port}`,
+    tailscale: tailscale ? `http://${tailscale.ip}:${port}` : null,
+    https: tailscale?.hostname ? `https://${tailscale.hostname}:${port}` : null
   };
 
   return html`
