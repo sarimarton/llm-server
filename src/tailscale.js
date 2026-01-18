@@ -1,7 +1,7 @@
 // Tailscale integration
 
 import { execSync, exec } from 'child_process';
-import { TAILSCALE_PATH } from './config.js';
+import { TAILSCALE_PATH, BASE_PATH } from './config.js';
 
 /**
  * Execute a Tailscale CLI command
@@ -39,27 +39,29 @@ export function getTailscaleInfo() {
 }
 
 /**
- * Get current Tailscale serve configuration
- * Returns { port, https } or null if not configured
+ * Get current Tailscale serve configuration for our BASE_PATH
+ * Returns { path, port, https } or null if not configured
  */
 export function getTailscaleServeStatus() {
   try {
     const output = tailscaleExec('serve status --json 2>/dev/null');
     const status = JSON.parse(output);
 
-    // Parse the serve config to find the port
-    // The structure is: { TCP: { "443": { HTTPS: true } }, Web: { "hostname:443": { Handlers: { "/": { Proxy: "http://127.0.0.1:PORT" } } } } }
+    // Parse the serve config to find our path
+    // Structure: { Web: { "hostname:443": { Handlers: { "/llm-server": { Proxy: "http://127.0.0.1:PORT" } } } } }
     if (status.Web) {
       for (const [key, webConfig] of Object.entries(status.Web)) {
-        if (webConfig.Handlers && webConfig.Handlers['/']) {
-          const proxy = webConfig.Handlers['/'].Proxy;
-          if (proxy) {
-            const match = proxy.match(/:(\d+)$/);
+        if (webConfig.Handlers) {
+          // Check if our BASE_PATH is configured
+          const handler = webConfig.Handlers[BASE_PATH];
+          if (handler?.Proxy) {
+            const match = handler.Proxy.match(/:(\d+)$/);
             if (match) {
               return {
+                path: BASE_PATH,
                 port: parseInt(match[1], 10),
                 https: true,
-                proxy
+                proxy: handler.Proxy
               };
             }
           }
@@ -74,27 +76,27 @@ export function getTailscaleServeStatus() {
 }
 
 /**
- * Check if Tailscale serve is configured for the specified port
+ * Check if Tailscale serve is configured correctly for our path and port
  */
-export function isServeConfiguredForPort(port) {
+export function isServeConfiguredCorrectly(port) {
   const status = getTailscaleServeStatus();
-  return status?.port === port;
+  return status?.path === BASE_PATH && status?.port === port;
 }
 
 /**
- * Setup Tailscale serve for a port (runs in background)
+ * Setup Tailscale serve with path-based routing
  */
 export async function setupTailscaleServe(port) {
   return new Promise((resolve, reject) => {
-    // First, turn off any existing serve
+    // First, remove any existing handler for our path
     try {
-      tailscaleExec('serve off 2>/dev/null');
+      tailscaleExec(`serve --remove ${BASE_PATH} 2>/dev/null`);
     } catch {
-      // Ignore errors - might not have anything to turn off
+      // Ignore errors - path might not exist
     }
 
-    // Then set up the new serve
-    const cmd = `"${TAILSCALE_PATH}" serve --bg ${port}`;
+    // Set up the new serve with path
+    const cmd = `"${TAILSCALE_PATH}" serve --bg --set-path ${BASE_PATH} http://127.0.0.1:${port}`;
     exec(cmd, (error, stdout, stderr) => {
       if (error) {
         reject(new Error(`Failed to setup Tailscale serve: ${stderr || error.message}`));
@@ -106,11 +108,11 @@ export async function setupTailscaleServe(port) {
 }
 
 /**
- * Turn off Tailscale serve
+ * Remove Tailscale serve for our path
  */
 export function disableTailscaleServe() {
   try {
-    tailscaleExec('serve off 2>/dev/null');
+    tailscaleExec(`serve --remove ${BASE_PATH} 2>/dev/null`);
     return true;
   } catch {
     return false;
@@ -130,6 +132,7 @@ export function getTailscaleDiagnostics() {
     running: available,
     ip: info?.ip || null,
     hostname: info?.hostname || null,
-    serve: serveStatus
+    serve: serveStatus,
+    basePath: BASE_PATH
   };
 }

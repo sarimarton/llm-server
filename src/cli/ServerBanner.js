@@ -3,7 +3,7 @@
 import React from 'react';
 import { render, Box, Text } from 'ink';
 import htm from 'htm';
-import { PORT, DEFAULT_CLAUDE_MODEL, VALID_CLAUDE_MODELS } from '../config.js';
+import { PORT, BASE_PATH, DEFAULT_CLAUDE_MODEL, VALID_CLAUDE_MODELS } from '../config.js';
 import { getLocalIP } from '../network.js';
 import { getTailscaleInfo } from '../tailscale.js';
 
@@ -25,7 +25,7 @@ function UrlRow({ label, url }) {
 /**
  * Endpoint Section Component
  */
-function EndpointSection({ title, apiKey, model, models, urls, basePath }) {
+function EndpointSection({ title, apiKey, model, models, urls, endpointPath }) {
   return html`
     <${Box} flexDirection="column" marginTop=${1}>
       <${Text}>
@@ -37,10 +37,10 @@ function EndpointSection({ title, apiKey, model, models, urls, basePath }) {
         ${models && html`<${Text} dimColor> (or: ${models.join(', ')})<//>`}
       <//>
       <${Text} dimColor>${'─'.repeat(65)}<//>
-      ${urls.local && html`<${UrlRow} label="Local:" url=${`${urls.local}${basePath}`} />`}
-      ${urls.network && html`<${UrlRow} label="Network:" url=${`${urls.network}${basePath}`} />`}
-      ${urls.tailscale && html`<${UrlRow} label="Tailscale:" url=${`${urls.tailscale}${basePath}`} />`}
-      ${urls.https && html`<${UrlRow} label="HTTPS/iOS:" url=${`${urls.https}${basePath}`} />`}
+      ${urls.local && html`<${UrlRow} label="Local:" url=${`${urls.local}${endpointPath}`} />`}
+      ${urls.network && html`<${UrlRow} label="Network:" url=${`${urls.network}${endpointPath}`} />`}
+      ${urls.tailscale && html`<${UrlRow} label="Tailscale:" url=${`${urls.tailscale}${endpointPath}`} />`}
+      ${urls.https && html`<${UrlRow} label="HTTPS/iOS:" url=${`${urls.https}${endpointPath}`} />`}
     <//>
   `;
 }
@@ -52,11 +52,13 @@ function ServerBanner({ port = PORT }) {
   const localIP = getLocalIP();
   const tailscale = getTailscaleInfo();
 
+  // For direct access (IP:port), include BASE_PATH
+  // For HTTPS (tailscale serve), path is routed, no port needed
   const urls = {
-    local: `http://localhost:${port}`,
-    network: `http://${localIP}:${port}`,
-    tailscale: tailscale ? `http://${tailscale.ip}:${port}` : null,
-    https: tailscale?.hostname ? `https://${tailscale.hostname}` : null
+    local: `http://localhost:${port}${BASE_PATH}`,
+    network: `http://${localIP}:${port}${BASE_PATH}`,
+    tailscale: tailscale ? `http://${tailscale.ip}:${port}${BASE_PATH}` : null,
+    https: tailscale?.hostname ? `https://${tailscale.hostname}${BASE_PATH}` : null
   };
 
   return html`
@@ -71,7 +73,7 @@ function ServerBanner({ port = PORT }) {
         model=${DEFAULT_CLAUDE_MODEL}
         models=${VALID_CLAUDE_MODELS}
         urls=${urls}
-        basePath="/claude/v1"
+        endpointPath="/claude/v1"
       />
 
       <${EndpointSection}
@@ -79,7 +81,7 @@ function ServerBanner({ port = PORT }) {
         apiKey="dummy"
         model="libretranslate"
         urls=${urls}
-        basePath="/libretranslate/v1"
+        endpointPath="/libretranslate/v1"
       />
 
       <${Box} marginTop=${1}>

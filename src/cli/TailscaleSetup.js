@@ -10,7 +10,7 @@ import {
   getTailscaleServeStatus,
   setupTailscaleServe
 } from '../tailscale.js';
-import { PORT } from '../config.js';
+import { PORT, BASE_PATH } from '../config.js';
 
 const html = htm.bind(React.createElement);
 
@@ -327,9 +327,10 @@ export function checkTailscaleStatus(port = PORT) {
   const info = getTailscaleInfo();
   const serve = getTailscaleServeStatus();
 
-  if (serve?.port === port) {
+  // Check if path and port are correctly configured
+  if (serve?.path === BASE_PATH && serve?.port === port) {
     return { ok: true, info, serve };
-  } else if (serve?.port) {
+  } else if (serve?.path === BASE_PATH && serve?.port !== port) {
     return { ok: false, reason: 'wrong-port', expected: port, actual: serve.port, info, serve };
   } else {
     return { ok: false, reason: 'not-configured', info };
