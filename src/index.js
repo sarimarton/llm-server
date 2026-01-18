@@ -73,8 +73,8 @@ async function main() {
   // Health check
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-  // Start server
-  app.listen(port, () => {
+  // Start server (bind to localhost only - Tailscale serve proxies external requests)
+  app.listen(port, '127.0.0.1', () => {
     showServerBanner(port);
   });
 }
